@@ -16,7 +16,7 @@ You need Python 3.6+ (f-strings rock!), [the requests library](https://pypi.org/
 `pip install -r requirements.txt`
 
 
-You've to configure a data.json file with the following data:
+You've to create and configure a data.json file with the following data:
 ```json
 {
   "username": "<YOUR WOFFU USERNAME>",
@@ -25,12 +25,21 @@ You've to configure a data.json file with the following data:
   "company_id": <YOUR COMPANY ID>,
   "company_country": "<YOUR COMPANY COUNTRY>",
   "company_subdivision": "<YOUR COMPANY SUBDIVISION>",
-  "domain": "<YOUR COMPANY WOFFU DOMAIN>"
+  "domain": "<YOUR COMPANY WOFFU DOMAIN>",
+  "woffu_url": "<YOUR WOFFU URL>"
 }
+
 ```
 
 If you don't have login data in your data.json you'll be prompted to enter your user and password the first time it starts, and that's it, you don't have to do anything else
 but to execute the script whenever you want to log in or out.
+
+## Usage
+
+```
+python3 woffu.py -d "2025-10-09" -s "08:00:00" -e "15:00:00"
+```
+
 
 ## Caveats
 ### Passwords
