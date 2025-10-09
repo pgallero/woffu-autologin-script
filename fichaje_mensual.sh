@@ -57,8 +57,8 @@ for day in $(seq 1 $DAYS_IN_MONTH); do
       COMMAND="python3 woffu.py -d \"$CURRENT_DATE\" -s \"$RANDOM_START_TIME\" -e \"$RANDOM_END_TIME\""
       echo "Ejecutando para el día $CURRENT_DATE -> Entrada: $RANDOM_START_TIME | Salida: $RANDOM_END_TIME"
 
-      # Descomenta la siguiente línea para ejecutar el comando de verdad
-      # eval $COMMAND
+      # Comenta la siguiente línea para ejecutar el comando y no modificar Woffu
+      eval $COMMAND
     else
       echo "Saltando fichaje de $CURRENT_DATE a las $RANDOM_END_TIME (aún no ha pasado)"
     fi
