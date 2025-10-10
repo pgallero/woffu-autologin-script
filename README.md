@@ -26,8 +26,7 @@ You've to create and configure a data.json file with the following data:
   "company_id": <YOUR COMPANY ID>,
   "company_country": "<YOUR COMPANY COUNTRY>",
   "company_subdivision": "<YOUR COMPANY SUBDIVISION>",
-  "domain": "<YOUR COMPANY WOFFU DOMAIN>",
-  "woffu_url": "<YOUR WOFFU URL>"
+  "domain": "<YOUR COMPANY WOFFU DOMAIN>"
 }
 
 ```

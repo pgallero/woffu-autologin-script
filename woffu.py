@@ -11,13 +11,13 @@ from datetime import date,datetime
 from dateutil.tz import tzlocal
 from operator import itemgetter
 
-def getDiaryDetails(diary_id, auth_headers, woffu_url):
+def getDiaryDetails(diary_id, auth_headers, domain):
     """
     (Hypothetical Function)
     Fetches the FULL details for a single diary, including the slots array.
     """
     # ⚠️ This URL is a guess! You must find the correct one in your API documentation.
-    url = f"https://{woffu_url}/api/diaries/{diary_id}"
+    url = f"https://{domain}/api/diaries/{diary_id}"
     
     print(f"--- Fetching full details from: {url} ---")
     try:
@@ -30,11 +30,11 @@ def getDiaryDetails(diary_id, auth_headers, woffu_url):
         return None
 
 # Fetch presences
-def getPrensence(user_id, auth_headers, woffu_url):
+def getPrensence(user_id, auth_headers, domain):
     # Define the date to search
     fromDate = date_to_update
     toDate = date_to_update
-    url = f"https://{woffu_url}/api/svc/core/diariesquery/users/{user_id}/diaries/summary/presence?userId={user_id}&fromDate={fromDate}&toDate={toDate}&pageSize=31&includeHourTypes=true&includeNotHourTypes=true&includeDifference=true"
+    url = f"https://{domain}/api/svc/core/diariesquery/users/{user_id}/diaries/summary/presence?userId={user_id}&fromDate={fromDate}&toDate={toDate}&pageSize=31&includeHourTypes=true&includeNotHourTypes=true&includeDifference=true"
     response = requests.get(url, headers=auth_headers)
 
     if response.status_code == 200:
@@ -59,12 +59,12 @@ def getPrensence(user_id, auth_headers, woffu_url):
     else:
         print(f"Error {response.status_code}: {response.text}")
 
-def setPresenceFlexible(auth_headers, user_id, diary_id, start_time, end_time, woffu_url):
+def setPresenceFlexible(auth_headers, user_id, diary_id, start_time, end_time, domain):
     """
     Sends a PUT request with a dynamically generated JSON payload.
     Calculates total minutes automatically.
     """
-    url = f"https://{woffu_url}/api/diaries/{diary_id}/workday/slots/self"
+    url = f"https://{domain}/api/diaries/{diary_id}/workday/slots/self"
 
     # Calculate total minutes from the time strings
     t1 = datetime.strptime(start_time, "%H:%M:%S")
@@ -183,7 +183,7 @@ def signIn(domain, user_id, auth_headers):
         headers = auth_headers
     ).ok
 
-def saveData(username, password, user_id, company_id, company_country, company_subdivision, domain, woffu_url):
+def saveData(username, password, user_id, company_id, company_country, company_subdivision, domain):
     #Store user/password/id to make less network requests in next logins
     with open(inputfile, "w") as login_info:
         json.dump(
@@ -194,8 +194,7 @@ def saveData(username, password, user_id, company_id, company_country, company_s
                 "company_id": company_id,
                 "company_country": company_country,
                 "company_subdivision": company_subdivision,
-                "domain": domain,
-                "woffu_url": woffu_url
+                "domain": domain
             },
             login_info
         )
@@ -245,15 +244,14 @@ saved_credentials = os.path.exists(inputfile)
 if (saved_credentials):
     with open(inputfile, "r") as json_data:
         login_info = json.load(json_data)
-        domain, username, password, user_id, company_id, company_country, company_subdivision, woffu_url = itemgetter(
+        domain, username, password, user_id, company_id, company_country, company_subdivision = itemgetter(
             "domain",
             "username",
             "password",
             "user_id",
             "company_id",
             "company_country",
-            "company_subdivision",
-            "woffu_url"
+            "company_subdivision"
         )(login_info)
 else:
     username = input("Enter your Woffu username:\n")
@@ -272,18 +270,18 @@ if (getHolidays(company_country, company_subdivision)):
 if (signIn(domain, user_id, auth_headers)):
     print ("Login Success!")
     print ("Obtaining Presence...\n")
-    presence_data = getPrensence(user_id, auth_headers, woffu_url)
+    presence_data = getPrensence(user_id, auth_headers, domain)
     
     first_diary = presence_data["diaries"][0]
     diary_id_to_update = first_diary["diaryId"]
-    #diary_details = getDiaryDetails(diary_id_to_update, auth_headers, woffu_url)
+    #diary_details = getDiaryDetails(diary_id_to_update, auth_headers, domain)
     
     diary_to_update = diary_id_to_update
     start_work_time = start_time
     end_work_time = end_time
-    setPresenceFlexible(auth_headers, user_id, diary_to_update, start_work_time, end_work_time, woffu_url)
+    setPresenceFlexible(auth_headers, user_id, diary_to_update, start_work_time, end_work_time, domain)
 else:
     print ("Something went wrong when trying to log you in/out.")
 
 if (not saved_credentials):
-    saveData(username, password, user_id, company_id, domain, woffu_url)
+    saveData(username, password, user_id, company_id, domain)
