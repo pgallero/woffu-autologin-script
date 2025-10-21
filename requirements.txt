@@ -1,2 +1,3 @@
 requests
 holidays
+python-dateutil

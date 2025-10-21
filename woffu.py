@@ -1,129 +1,98 @@
 #!/usr/bin/env python3
+"""
+Woffu Core - Funcionalidad principal de fichaje
+Versión simplificada para usar con woffu_unified.py
+"""
 
 import sys
-import getopt
 import holidays
 import requests
 import json
 import os.path
 import getpass
-from datetime import date,datetime
+from datetime import date, datetime
 from dateutil.tz import tzlocal
 from operator import itemgetter
+from typing import List, Tuple
 
-def getDiaryDetails(diary_id, auth_headers, domain):
-    """
-    (Hypothetical Function)
-    Fetches the FULL details for a single diary, including the slots array.
-    """
-    # ⚠️ This URL is a guess! You must find the correct one in your API documentation.
-    url = f"https://{domain}/api/diaries/{diary_id}"
-    
-    print(f"--- Fetching full details from: {url} ---")
-    try:
-        response = requests.get(url, headers=auth_headers, timeout=10)
-        response.raise_for_status()
-        # This should return JSON that contains the 'slots' list with the 'id'
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Could not get diary details: {e}")
-        return None
-
-# Fetch presences
-def getPrensence(user_id, auth_headers, domain):
-    # Define the date to search
-    fromDate = date_to_update
-    toDate = date_to_update
-    url = f"https://{domain}/api/svc/core/diariesquery/users/{user_id}/diaries/summary/presence?userId={user_id}&fromDate={fromDate}&toDate={toDate}&pageSize=31&includeHourTypes=true&includeNotHourTypes=true&includeDifference=true"
-    response = requests.get(url, headers=auth_headers)
-
-    if response.status_code == 200:
-        presence_data = response.json()
-        for diary in presence_data["diaries"]:
-            diary_id = diary["diaryId"]
-            user_id = diary["userId"]
-            date = diary["date"]
-            start_time = diary.get("in", "N/A")
-            end_time = diary.get("out", "N/A")
-            accepted = diary["accepted"]
-            pending = diary["isPending"]
-            print(f"Diary ID: {diary_id}")
-            print(f"User ID: {user_id}")
-            print(f"Date: {date}")
-            print(f"Start Time: {start_time}")
-            print(f"End Time: {end_time}")
-            print(f"Accepted: {accepted}")
-            print(f"Is Pending: {pending}")
-            print("---")
-        return presence_data
-    else:
-        print(f"Error {response.status_code}: {response.text}")
-
-def setPresenceFlexible(auth_headers, user_id, diary_id, start_time, end_time, domain):
-    """
-    Sends a PUT request with a dynamically generated JSON payload.
-    Calculates total minutes automatically.
-    """
-    url = f"https://{domain}/api/diaries/{diary_id}/workday/slots/self"
-
-    # Calculate total minutes from the time strings
+def _build_slot(start_time: str, end_time: str, order: int) -> dict:
+    """Construye un slot Woffu a partir de horas texto."""
     t1 = datetime.strptime(start_time, "%H:%M:%S")
     t2 = datetime.strptime(end_time, "%H:%M:%S")
     total_minutes = int((t2 - t1).total_seconds() / 60)
+    return {
+        "id": None,
+        "motive": None,
+        "in": {
+            "new": True,
+            "deleted": False,
+            "agreementEventId": None,
+            "code": None,
+            "iP": None,
+            "requestId": None,
+            "signId": 0,
+            "signStatus": 1,
+            "signType": 3,
+            "time": start_time,
+            "deviceId": None,
+            "signIn": True,
+            "userId": 0
+        },
+        "out": {
+            "new": True,
+            "deleted": False,
+            "agreementEventId": None,
+            "code": None,
+            "iP": None,
+            "requestId": None,
+            "signId": 0,
+            "signStatus": 1,
+            "signType": 3,
+            "time": end_time,
+            "deviceId": None,
+            "signIn": False,
+            "userId": 0
+        },
+        "order": order,
+        "totalMin": total_minutes,
+        "deleted": False,
+        "new": True
+    }
 
-    # Build the payload dynamically
+def setPresenceFlexible(auth_headers, user_id, diary_id, start_time, end_time, woffu_url, existing_slots=None):
+    """Crea un solo intervalo (retrocompatibilidad)."""
+    return setPresenceFlexibleMultiple(auth_headers, user_id, diary_id, [(start_time, end_time)], woffu_url)
+
+def setPresenceFlexibleMultiple(auth_headers, user_id, diary_id, intervals: List[Tuple[str,str]], woffu_url):
+    """Envía un PUT con todos los intervalos del día en una sola llamada.
+
+    IMPORTANTE: Esta llamada reemplaza los slots existentes del día en el diario.
+    Por eso se utiliza sólo cuando queremos establecer todos los intervalos previstos.
+    """
+    url = f"https://{woffu_url}/api/diaries/{diary_id}/workday/slots/self"
+    # Fecha del día que estamos procesando (variable global establecida en woffu_file_entry* )
+    work_date = date_to_update if 'date_to_update' in globals() else datetime.now().strftime("%Y-%m-%d")
+
+    slots = []
+    for idx, (s,e) in enumerate(intervals, start=1):
+        slots.append(_build_slot(s, e, idx))
+
     payload = {
         "userId": user_id,
         "comments": "",
-        "date": date_to_update,
-        "slots": [
-            {
-                "id": None,
-                "motive": None,
-                "in": {
-                    "new": True,
-                    "deleted": False,
-                    "agreementEventId": None,
-                    "code": None,
-                    "iP": None,
-                    "requestId": None,
-                    "signId": 0,
-                    "signStatus": 1,
-                    "signType": 3,
-                    "time": start_time,  # <-- Dynamic value
-                    "deviceId": None,
-                    "signIn": True,
-                    "userId": 0  # Note: This specific field seems to be 0 by default
-                },
-                "out": {
-                    "new": True,
-                    "deleted": False,
-                    "agreementEventId": None,
-                    "code": None,
-                    "iP": None,
-                    "requestId": None,
-                    "signId": 0,
-                    "signStatus": 1,
-                    "signType": 3,
-                    "time": end_time,  # <-- Dynamic value
-                    "deviceId": None,
-                    "signIn": False,
-                    "userId": 0
-                },
-                "order": 1,
-                "totalMin": total_minutes
-            }
-        ],
+        "date": work_date,
+        "slots": slots,
         "diaryId": diary_id
     }
-    
     try:
         response = requests.put(url, headers=auth_headers, json=payload)
         response.raise_for_status()
-        print(f"Presence modified correctly. Status Code: {response.status_code}")
-        
+        print(f"✅ Fichajes creados ({len(slots)} intervalo(s)). Status: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
+        print(f"❌ Error creando fichajes múltiples: {e}")
+        if hasattr(e.response, 'text'):
+            print(f"Response text: {e.response.text}")
+        raise
 
 # aux functions
 def getHolidays(company_country, company_subdivision):
@@ -172,20 +141,54 @@ def signIn(domain, user_id, auth_headers):
     utc_timezone_hours='+0{:}'.format(utc_timezone) + ":00"
     #Actually log in
     print("Sending sign request...\n")
+    final_url = f"https://{domain}/api/svc/signs/signs"
     return requests.post(
         f"https://{domain}/api/svc/signs/signs",
-        json = {
-            'StartDate': datetime.now().replace(microsecond=0).isoformat()+utc_timezone_hours,
-            'EndDate': datetime.now().replace(microsecond=0).isoformat()+utc_timezone_hours,
+        json={
+            'StartDate': datetime.now().replace(microsecond=0).isoformat() + utc_timezone_hours,
+            'EndDate': datetime.now().replace(microsecond=0).isoformat() + utc_timezone_hours,
             'TimezoneOffset': timezone_offset,
             'UserId': user_id
         },
         headers = auth_headers
     ).ok
 
-def saveData(username, password, user_id, company_id, company_country, company_subdivision, domain):
-    #Store user/password/id to make less network requests in next logins
-    with open(inputfile, "w") as login_info:
+# Fetch presences
+def getPrensence(user_id, auth_headers, woffu_url):
+    # Define the date to search
+    fromDate = date_to_update
+    toDate = date_to_update
+    url = f"https://{woffu_url}/api/svc/core/diariesquery/users/{user_id}/diaries/summary/presence?userId={user_id}&fromDate={fromDate}&toDate={toDate}&pageSize=31&includeHourTypes=true&includeNotHourTypes=true&includeDifference=true"
+    response = requests.get(url, headers=auth_headers)
+
+    if response.status_code == 200:
+        presence_data = response.json()
+        for diary in presence_data["diaries"]:
+            diary_id = diary["diaryId"]
+            user_id = diary["userId"]
+            date = diary["date"]
+            start_time = diary.get("in", "N/A")
+            end_time = diary.get("out", "N/A")
+            accepted = diary["accepted"]
+            pending = diary["isPending"]
+            
+            print(f"Diary ID: {diary_id}")
+            print(f"User ID: {user_id}")
+            print(f"Date: {date}")
+            print(f"Start Time: {start_time}")
+            print(f"End Time: {end_time}")
+            print(f"Accepted: {accepted}")
+            print(f"Is Pending: {pending}")
+            print("---")
+            
+        return presence_data
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+        return None
+
+def saveData(username, password, user_id, company_id, company_country, company_subdivision, domain, woffu_url, data_file='data.json'):
+    """Guarda los datos de usuario para futuras ejecuciones"""
+    with open(data_file, "w") as login_info:
         json.dump(
             {
                 "username": username,
@@ -194,94 +197,134 @@ def saveData(username, password, user_id, company_id, company_country, company_s
                 "company_id": company_id,
                 "company_country": company_country,
                 "company_subdivision": company_subdivision,
-                "domain": domain
+                "domain": domain,
+                "woffu_url": woffu_url
             },
-            login_info
+            login_info,
+            indent=2
         )
 
-print("Woffu Autologin Script\n")
-def main(argv):
-   global inputfile
-   global date_to_update
-   global start_time
-   global end_time
-   start_time = None
-   end_time = None
-   inputfile = './data.json'
-   date_to_update = None
-   try:
-      opts, args = getopt.getopt(argv,"hi:d:s:e:o:", ["ifile=", "start-time=", "end-time="])
-   except getopt.GetoptError:
-      print (sys.argv[0] + ' -i <inputfile>')
-      sys.exit(2)
-   for opt, arg in opts:
-      if opt == '-h':
-         print (sys.argv[0] + ' -i <inputfile>')
-         sys.exit()
-      elif opt in ("-i", "--ifile"):
-         inputfile = arg
-      elif opt in ("-d", "--date"):
-         date_to_update = arg
-      elif opt in ("-s", "--start-time"):
-         start_time = arg
-      elif opt in ("-e", "--end-time"):
-         end_time = arg
+def woffu_file_entry(filing_date, start_time, end_time, data_file='data.json'):
+    """
+    Función principal para realizar un fichaje en Woffu
+    
+    Args:
+        filing_date (str): Fecha en formato YYYY-MM-DD
+        start_time (str): Hora de entrada en formato HH:MM:SS
+        end_time (str): Hora de salida en formato HH:MM:SS
+        data_file (str): Archivo de datos de usuario
+    
+    Returns:
+        bool: True si el fichaje fue exitoso, False en caso contrario
+    """
+    global date_to_update
+    date_to_update = filing_date
+    
+    try:
+        # Cargar credenciales
+        with open(data_file, "r") as json_data:
+            login_info = json.load(json_data)
+            domain, username, password, user_id, company_id, company_country, company_subdivision, woffu_url = itemgetter(
+                "domain", "username", "password", "user_id", "company_id",
+                "company_country", "company_subdivision", "woffu_url"
+            )(login_info)
+        
+        # Obtener token de autorización
+        auth_headers = getAuthHeaders(username, password)
+        
+        # Verificar si es día festivo
+        if getHolidays(company_country, company_subdivision):
+            print("⚠️ Hoy es día festivo. ¿Qué haces trabajando?")
+            return False
+        
+        # Realizar login
+        if not signIn(domain, user_id, auth_headers):
+            print("❌ Error al hacer login en Woffu")
+            return False
+        
+        print("✅ Login exitoso")
+        
+        # Obtener información de presencia
+        presence_data = getPrensence(user_id, auth_headers, woffu_url)
+        if not presence_data or not presence_data.get("diaries"):
+            print("❌ No se pudo obtener información de presencia")
+            return False
+        
+        # Obtener el diary para el día específico
+        first_diary = presence_data["diaries"][0]
+        diary_id = first_diary["diaryId"]
+        # Crear el fichaje (sin verificar fichajes existentes)
+        setPresenceFlexible(auth_headers, user_id, diary_id, start_time, end_time, woffu_url)
+        print(f"✅ Fichaje completado para {filing_date}: {start_time} - {end_time}")
+        return True
+    except Exception as e:
+        print(f"❌ Error durante el fichaje: {e}")
+        return False
+def woffu_file_entry_multi(filing_date: str, intervals: List[Tuple[str,str]], data_file='data.json') -> bool:
+    """Fichaje múltiple para un mismo día con varios intervalos.
 
-   if start_time is None or end_time is None or date_to_update is None:
-       print("Error: --date (-d), --start-time (-s) and --end-time (-e) are mandatory.", file=sys.stderr)
-       print('Usage: script.py -s <starttime> -e <endtime> -d <date_to_update>', file=sys.stderr)
-       sys.exit(2) # Exit with an error code
-         
-   print(f'Start time: {start_time}')
-   print(f'End time: {end_time}')
-   print ('Input file is ' + inputfile)
-   print ('Date is ' + date_to_update)
-   return inputfile
-if __name__ == "__main__":
-   main(sys.argv[1:])
-
-saved_credentials = os.path.exists(inputfile)
-if (saved_credentials):
-    with open(inputfile, "r") as json_data:
-        login_info = json.load(json_data)
-        domain, username, password, user_id, company_id, company_country, company_subdivision = itemgetter(
-            "domain",
-            "username",
-            "password",
-            "user_id",
-            "company_id",
-            "company_country",
-            "company_subdivision"
+    Args:
+        filing_date: YYYY-MM-DD
+        intervals: lista de tuplas (inicio, fin) en formato HH:MM:SS
+        data_file: archivo con credenciales
+    """
+    global date_to_update
+    date_to_update = filing_date
+    try:
+        with open(data_file, "r") as json_data:
+            login_info = json.load(json_data)
+        domain, username, password, user_id, company_id, company_country, company_subdivision, woffu_url = itemgetter(
+            "domain", "username", "password", "user_id", "company_id",
+            "company_country", "company_subdivision", "woffu_url"
         )(login_info)
-else:
-    username = input("Enter your Woffu username:\n")
-    password = getpass.getpass("Enter your password:\n")
 
-auth_headers = getAuthHeaders(username, password)
+        auth_headers = getAuthHeaders(username, password)
 
-if (not saved_credentials):
-    domain, user_id, company_id = getDomainUserCompanyId(auth_headers)
+        if getHolidays(company_country, company_subdivision):
+            print("⚠️ Hoy es día festivo. ¿Qué haces trabajando?")
+            return False
 
+        if not signIn(domain, user_id, auth_headers):
+            print("❌ Error al hacer login en Woffu")
+            return False
 
-if (getHolidays(company_country, company_subdivision)):
-    print("Today is a public holiday. What are you doing working?!!. Exiting...")
-    exit()
+        print("✅ Login exitoso")
 
-if (signIn(domain, user_id, auth_headers)):
-    print ("Login Success!")
-    print ("Obtaining Presence...\n")
-    presence_data = getPrensence(user_id, auth_headers, domain)
+        presence_data = getPrensence(user_id, auth_headers, woffu_url)
+        if not presence_data or not presence_data.get("diaries"):
+            print("❌ No se pudo obtener información de presencia")
+            return False
+
+        diary_id = presence_data["diaries"][0]["diaryId"]
+
+        # Ordenar y asegurar no solapamiento (seguridad extra)
+        sorted_intervals = sorted(intervals, key=lambda x: x[0])
+        for i in range(1, len(sorted_intervals)):
+            if sorted_intervals[i-1][1] > sorted_intervals[i][0]:
+                raise ValueError(f"Intervalos solapados: {sorted_intervals[i-1]} y {sorted_intervals[i]}")
+
+        setPresenceFlexibleMultiple(auth_headers, user_id, diary_id, sorted_intervals, woffu_url)
+        joined = ", ".join([f"{a}-{b}" for a,b in sorted_intervals])
+        print(f"✅ Fichajes múltiples completados para {filing_date}: {joined}")
+        return True
+    except Exception as e:
+        print(f"❌ Error durante el fichaje múltiple: {e}")
+        return False
+
+def main():
+    """Función principal para compatibilidad con llamadas directas"""
+    import argparse
     
-    first_diary = presence_data["diaries"][0]
-    diary_id_to_update = first_diary["diaryId"]
-    #diary_details = getDiaryDetails(diary_id_to_update, auth_headers, domain)
+    parser = argparse.ArgumentParser(description="Woffu Core - Fichaje individual")
+    parser.add_argument('-d', '--date', required=True, help='Fecha (YYYY-MM-DD)')
+    parser.add_argument('-s', '--start-time', required=True, help='Hora entrada (HH:MM:SS)')
+    parser.add_argument('-e', '--end-time', required=True, help='Hora salida (HH:MM:SS)')
+    parser.add_argument('-i', '--inputfile', default='data.json', help='Archivo de datos')
     
-    diary_to_update = diary_id_to_update
-    start_work_time = start_time
-    end_work_time = end_time
-    setPresenceFlexible(auth_headers, user_id, diary_to_update, start_work_time, end_work_time, domain)
-else:
-    print ("Something went wrong when trying to log you in/out.")
+    args = parser.parse_args()
+    
+    success = woffu_file_entry(args.date, args.start_time, args.end_time, args.inputfile)
+    sys.exit(0 if success else 1)
 
-if (not saved_credentials):
-    saveData(username, password, user_id, company_id, domain)
+if __name__ == "__main__":
+    main()
